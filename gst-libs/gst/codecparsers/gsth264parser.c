@@ -2125,7 +2125,7 @@ gst_h264_parser_parse_slice_hdr (GstH264NalParser * nalparser,
   GST_DEBUG ("parsing \"Slice header\", slice type %u", slice->type);
 
   READ_UE_MAX (&nr, pps_id, GST_H264_MAX_PPS_COUNT - 1);
-  pps = gst_h264_parser_get_pps (nalparser, pps_id);
+  pps = gst_h264_parser_get_pps (nalparser, 0);
 
   if (!pps) {
     GST_WARNING ("couldn't find associated picture parameter set with id: %d",

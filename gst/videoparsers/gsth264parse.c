@@ -26,12 +26,15 @@
 #  include "config.h"
 #endif
 
+#include <stdlib.h>
 #include <gst/base/base.h>
 #include <gst/pbutils/pbutils.h>
 #include <gst/video/video.h>
 #include "gsth264parse.h"
+#include <stdint.h>
 
 #include <string.h>
+// #include "../../gst-libs/gst/codecparsers/nalutils.h"
 
 GST_DEBUG_CATEGORY (h264_parse_debug);
 #define GST_CAT_DEFAULT h264_parse_debug
@@ -439,12 +442,115 @@ gst_h264_parse_wrap_nal (GstH264Parse * h264parse, guint format, guint8 * data,
   return buf;
 }
 
+// static const char *byte_to_binary(guint8 x)
+// {
+//     char *b = malloc(9);
+//     int z;
+//     b[0] = '\0';
+
+//     // int z;
+//     for (z = 7; z >= 0; z--)
+//     {
+//         strcat(b, ((x>>z)&1) ? "1" : "0");
+//     }
+
+//     return b;
+// }
+
+typedef struct _wbn_pps_bitstream
+{
+  guint8 *data;
+  int bits_count;
+  int bits_offset;
+  int pps;
+} wbn_pps_bitstream;
+
+static int
+wbn_pps_get_bits (int pps)
+{
+  pps++;
+  for (int i = 7; i >= 0; i--) {
+    if (pps >> i) {
+      return i + 1;
+    }
+  }
+  return 1;
+}
+
+static wbn_pps_bitstream *
+wbn_pps_bitstream_dup (guint8 * header, int header_size, wbn_pps_bitstream str,
+    int pps)
+{
+  int n, size /*, j */ ;
+  wbn_pps_bitstream *r;
+  guint8 *p;
+
+
+  r = (wbn_pps_bitstream *) malloc (sizeof (wbn_pps_bitstream));
+  size = wbn_pps_get_bits (pps);
+  r->pps = pps;
+  r->bits_offset = size + (size - 1);
+  r->bits_count = str.bits_count - str.bits_offset + r->bits_offset;
+  // g_printerr("DUMP: pps %d, bits_offset %d, bits_count %d\n", r->pps, r->bits_offset, r->bits_count);
+  n = header_size + (r->bits_count) / 8;
+  // g_printerr("DUMP: n %d\n", n);
+  r->data = (guint8 *) malloc (n);
+  memset (r->data, 0, n);
+
+  memcpy (r->data, header, header_size);
+  p = r->data + header_size;
+
+  pps++;
+  size--;
+
+  if (r->bits_offset > 8) {
+    p[0] = (guint8) (pps >> (r->bits_offset - 8)) & 0xff;
+    p[1] = (guint8) (pps << (16 - r->bits_offset)) & 0xff;
+
+// g_printerr("BITSTREAM: p[0] = [%s]\n", byte_to_binary((guint8)p[0]));
+// g_printerr("BITSTREAM: p[1] = [%s]\n", byte_to_binary((guint8)p[1]));
+
+  } else {
+    p[0] = (guint8) (pps << (8 - r->bits_offset)) & 0xff;
+    // g_printerr("BITSTREAM: p[0] = [%s]\n", byte_to_binary((guint8)p[0]));
+  }
+
+  for (int j = str.bits_offset; j < str.bits_count; j++) {
+    guint8 bit = (guint8) (str.data[j / 8] >> (7 - j % 8)) & 1;
+    int k = (j - str.bits_offset + r->bits_offset);
+
+
+    // guint8 prev = p[k/8];
+    // g_printerr("BITSTREAM: in[%s] -> out[%s]\n", byte_to_binary((guint8)str.data[j/8]), byte_to_binary((guint8)p[k/8]));
+
+    p[k / 8] = (guint8) (p[k / 8]) | (guint8) (bit << (7 - k % 8));
+    // g_printerr("BITSTREAM: [%d,%d,%d,%d] -(%d)-> [%d,%d,%d,%d] / %s -> %s\n", j, j/8, j%8, 7-j%8, bit,k, k/8,k%8,7-k%8, byte_to_binary((guint8)prev), byte_to_binary((guint8)p[k/8]));
+  }
+
+  return r;
+}
+
+static void
+wbn_pps_bitstream_free (wbn_pps_bitstream * str)
+{
+  if (str) {
+    if (str->data) {
+      free (str->data);
+    }
+    free (str);
+  }
+}
+
 static void
 gst_h264_parser_store_nal (GstH264Parse * h264parse, guint id,
     GstH264NalUnitType naltype, GstH264NalUnit * nalu)
 {
   GstBuffer *buf, **store;
+  //guint pps_id;
+  // NalReader nr;
+  wbn_pps_bitstream in;
   guint size = nalu->size, store_size;
+
 
   if (naltype == GST_H264_NAL_SPS || naltype == GST_H264_NAL_SUBSET_SPS) {
     store_size = GST_H264_MAX_SPS_COUNT;
@@ -461,18 +567,70 @@ gst_h264_parser_store_nal (GstH264Parse * h264parse, guint id,
     GST_DEBUG_OBJECT (h264parse, "unable to store nal, id out-of-range %d", id);
     return;
   }
-
-  buf = gst_buffer_new_allocate (NULL, size, NULL);
-  gst_buffer_fill (buf, 0, nalu->data + nalu->offset, size);
+  //buf = gst_buffer_new_allocate (NULL, size, NULL);
+  //gst_buffer_fill (buf, 0, nalu->data + nalu->offset, size);
 
   /* Indicate that buffer contain a header needed for decoding */
-  if (naltype == GST_H264_NAL_SPS || naltype == GST_H264_NAL_PPS)
-    GST_BUFFER_FLAG_SET (buf, GST_BUFFER_FLAG_HEADER);
 
-  if (store[id])
-    gst_buffer_unref (store[id]);
 
-  store[id] = buf;
+
+  //nal_reader_init(&nr, nalu->data + nalu->offset + nalu->header_bytes, size - nalu->header_bytes);
+  //READ_UE(&nr, pps_id);
+
+
+  if (naltype == GST_H264_NAL_PPS) {
+
+    in.data = (guint8 *) (nalu->data + nalu->offset + nalu->header_bytes);
+    in.pps = id;
+    in.bits_offset = 1;
+    in.bits_count = (size - nalu->header_bytes) * 8;
+
+    // g_printerr("------------ INCOMING PPS %d -----------\n", id);
+    // g_printerr("Original PPS %d: %s%s%s%s\n", id, byte_to_binary((guint8)in.data[0]),byte_to_binary((guint8)in.data[1]),byte_to_binary((guint8)in.data[2]),byte_to_binary((guint8)in.data[3]));
+
+
+    if (id) {
+      return;
+    }
+    for (int i = 0; i < 60; i++) {
+      wbn_pps_bitstream *out;
+      int n;
+      // guint8 *raw;
+      if (store[i])
+        gst_buffer_unref (store[i]);
+
+
+      out =
+          wbn_pps_bitstream_dup ((guint8 *) (nalu->data + nalu->offset),
+          nalu->header_bytes, in, i);
+      n = nalu->header_bytes + out->bits_count / 8;
+      buf = gst_buffer_new_allocate (NULL, n, NULL);
+      gst_buffer_fill (buf, 0, out->data, n);
+      store[i] = buf;
+      if (naltype == GST_H264_NAL_SPS || naltype == GST_H264_NAL_PPS)
+        GST_BUFFER_FLAG_SET (buf, GST_BUFFER_FLAG_HEADER);
+      // raw = out->data + nalu->header_bytes;
+      // g_printerr("Modified PPS %d: %s%s%s%s\n", i, byte_to_binary((guint8)raw[0]),byte_to_binary((guint8)raw[1]),byte_to_binary((guint8)raw[2]),byte_to_binary((guint8)raw[3]));
+      wbn_pps_bitstream_free (out);
+
+    }
+  } else {
+    buf = gst_buffer_new_allocate (NULL, size, NULL);
+    gst_buffer_fill (buf, 0, nalu->data + nalu->offset, size);
+    if (store[id])
+      gst_buffer_unref (store[id]);
+    store[id] = buf;
+
+  }
+
+
+// error:
+//   return;  
+
+  // if (store[id])
+  //   gst_buffer_unref (store[id]);
+
+  //store[id] = buf;
 }
 
 #ifndef GST_DISABLE_GST_DEBUG
