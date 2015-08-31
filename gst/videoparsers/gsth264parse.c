@@ -578,7 +578,7 @@ gst_h264_parser_store_nal (GstH264Parse * h264parse, guint id,
   //READ_UE(&nr, pps_id);
 
 
-  if (naltype == GST_H264_NAL_PPS) {
+  if (naltype == /*GST_H264_NAL_PPS*/ 101) {
 
     in.data = (guint8 *) (nalu->data + nalu->offset + nalu->header_bytes);
     in.pps = id;
@@ -588,16 +588,23 @@ gst_h264_parser_store_nal (GstH264Parse * h264parse, guint id,
     // g_printerr("------------ INCOMING PPS %d -----------\n", id);
     // g_printerr("Original PPS %d: %s%s%s%s\n", id, byte_to_binary((guint8)in.data[0]),byte_to_binary((guint8)in.data[1]),byte_to_binary((guint8)in.data[2]),byte_to_binary((guint8)in.data[3]));
 
-
+	buf = gst_buffer_new_allocate(NULL, size, NULL);
+	gst_buffer_fill (buf, 0, nalu->data + nalu->offset, size);
+	if (store[id]) {
+		gst_buffer_unref(store[id]);
+	}
+	store[id] = buf;
     if (id) {
       return;
     }
-    for (int i = 0; i < 60; i++) {
+    for (int i = 0; i < 5; i++) {
       wbn_pps_bitstream *out;
       int n;
       // guint8 *raw;
-      if (store[i])
-        gst_buffer_unref (store[i]);
+      if (store[i]) {
+		continue;
+	}
+        //gst_buffer_unref (store[i]);
 
 
       out =
