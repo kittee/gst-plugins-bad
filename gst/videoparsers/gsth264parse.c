@@ -555,9 +555,6 @@ gst_h264_parser_store_nal (GstH264Parse * h264parse, guint id,
   if (naltype == GST_H264_NAL_SPS || naltype == GST_H264_NAL_SUBSET_SPS) {
     store_size = GST_H264_MAX_SPS_COUNT;
     store = h264parse->sps_nals;
-    if (id>0) {
-      return;
-    }
     GST_DEBUG_OBJECT (h264parse, "storing sps %u", id);
   } else if (naltype == GST_H264_NAL_PPS) {
     store_size = GST_H264_MAX_PPS_COUNT;
