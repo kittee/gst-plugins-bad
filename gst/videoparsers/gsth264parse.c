@@ -578,7 +578,7 @@ gst_h264_parser_store_nal (GstH264Parse * h264parse, guint id,
   //READ_UE(&nr, pps_id);
 
 
-  if (naltype == /*GST_H264_NAL_PPS*/ 101) {
+  if (naltype == /*GST_H264_NAL_PPS*/ 101 && h264parse->interval == 2) {
 
     in.data = (guint8 *) (nalu->data + nalu->offset + nalu->header_bytes);
     in.pps = id;
@@ -597,7 +597,7 @@ gst_h264_parser_store_nal (GstH264Parse * h264parse, guint id,
     if (id) {
       return;
     }
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 60; i++) {
       wbn_pps_bitstream *out;
       int n;
       // guint8 *raw;
